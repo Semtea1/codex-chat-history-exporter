@@ -2,6 +2,7 @@
   "name": "codex-chat-history-exporter",
   "version": "0.1.4",
   "private": true,
+  "license": "MIT",
   "displayName": "Codex Chat History Exporter",
   "publisher": "local",
   "description": "Codex chat history exporter shared core and VS Code extension",
