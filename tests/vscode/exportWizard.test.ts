@@ -96,6 +96,8 @@ describe("exportWizard", () => {
     expect(html).toContain("附 2 个子会话");
     expect(html).toContain("子会话");
     expect(html).toContain("内部维护会话");
+    expect(html).toContain("准备导出");
+    expect(html).toContain("确认当前选择后再生成导出文件");
     expect(html).toContain("附带子会话附录");
     expect(html).toContain("展开查看子会话");
     expect(html).toContain("按末句日期排序");
