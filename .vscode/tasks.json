@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build",
+      "label": "npm: build",
+      "problemMatcher": [
+        "$tsc"
+      ]
+    },
+    {
+      "type": "npm",
+      "script": "test",
+      "label": "npm: test",
+      "problemMatcher": []
+    },
+    {
+      "type": "npm",
+      "script": "vscode:package",
+      "label": "npm: vscode:package",
+      "problemMatcher": []
+    }
+  ]
+}

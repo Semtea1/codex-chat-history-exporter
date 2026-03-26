@@ -1,0 +1,130 @@
+{
+  "name": "codex-chat-history-exporter",
+  "version": "0.1.4",
+  "private": true,
+  "displayName": "Codex Chat History Exporter",
+  "publisher": "local",
+  "description": "Codex chat history exporter shared core and VS Code extension",
+  "main": "./dist/vscode/extension.js",
+  "engines": {
+    "vscode": "^1.97.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:codexChatExporter.openExportWizard",
+    "onCommand:codexChatExporter.exportSelectedSessions",
+    "onView:codexChatExporter.sessions"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexChatExporter.openExportWizard",
+        "title": "Open Chat Export Wizard",
+        "category": "Codex Chat Exporter"
+      },
+      {
+        "command": "codexChatExporter.exportSelectedSessions",
+        "title": "Export Selected Sessions",
+        "category": "Codex Chat Exporter"
+      },
+      {
+        "command": "codexChatExporter.refreshSessions",
+        "title": "Refresh Sessions",
+        "category": "Codex Chat Exporter"
+      }
+    ],
+    "views": {
+      "codexChatExporter": [
+        {
+          "id": "codexChatExporter.sessions",
+          "name": "Codex Sessions"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codexChatExporter",
+          "title": "Chat Export",
+          "icon": "media/activitybar-icon.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "codexChatExporter.refreshSessions",
+          "when": "view == codexChatExporter.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "codexChatExporter.openExportWizard",
+          "when": "view == codexChatExporter.sessions",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codexChatExporter.openExportWizard",
+          "when": "view == codexChatExporter.sessions",
+          "group": "inline"
+        },
+        {
+          "command": "codexChatExporter.exportSelectedSessions",
+          "when": "view == codexChatExporter.sessions",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Codex Chat History Exporter",
+      "properties": {
+        "codexChatExporter.codexRoot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Override the local .codex root directory. If empty, CODEX_HOME or %USERPROFILE%\\\\.codex is used."
+        },
+        "codexChatExporter.defaultOutputDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Default export root directory pre-filled in the export wizard."
+        },
+        "codexChatExporter.maxSessionsInWizard": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 10,
+          "description": "Maximum number of sessions shown in the export wizard list."
+        },
+        "codexChatExporter.showInternalSessions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show internal maintenance sessions such as memory consolidation runs."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "test": "node ./node_modules/vitest/vitest.mjs run",
+    "test:core": "node ./node_modules/vitest/vitest.mjs run tests/core",
+    "smoke": "node dist/cli/main.js",
+    "vscode:prepublish": "npm run build",
+    "vscode:package": "npm run build && node ./node_modules/@vscode/vsce/vsce package --no-dependencies --allow-missing-repository --skip-license --out codex-chat-history-exporter.vsix"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.2",
+    "@types/node": "^22.13.10",
+    "@types/vscode": "^1.97.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1"
+  }
+}
