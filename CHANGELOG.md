@@ -3,7 +3,8 @@
 ## 0.1.6
 
 - 新增茶杯头像风格 Marketplace 图标
-- 优化 GitHub README 展示，补充 Marketplace / Release / License 徽章
+- 重写 GitHub README，使其更适合作为公开项目主页展示
+- 新增更正式的 experimental / 免责说明
 - 为 Marketplace 发布准备新的 0.1.6 包
 ## 0.1.5
 
