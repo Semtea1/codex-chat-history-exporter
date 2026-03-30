@@ -3,7 +3,7 @@
   "version": "0.1.5",
   "license": "MIT",
   "displayName": "Codex Chat History Exporter",
-  "publisher": "seamtea1",
+  "publisher": "semtea1",
   "description": "Export Codex chat history from desktop, VS Code, and CLI sessions with transcript, hidden context, and tool traces.",
   "main": "./dist/vscode/extension.js",
   "repository": {
