@@ -41,4 +41,20 @@ describe("resolveExtensionRuntimeConfig", () => {
     expect(resolved.maxSessionsInWizard).toBe(1000);
     expect(resolved.showInternalSessions).toBe(false);
   });
+
+  it("falls back to HOME/.codex on Unix-like systems", () => {
+    const config = {
+      get<T>(_key: string, defaultValue?: T): T | undefined {
+        return defaultValue;
+      }
+    };
+
+    const resolved = resolveExtensionRuntimeConfig(config, {
+      HOME: "/home/testuser"
+    });
+
+    expect(resolved.codexRoot).toBe("/home/testuser/.codex");
+    expect(resolved.maxSessionsInWizard).toBe(1000);
+    expect(resolved.showInternalSessions).toBe(false);
+  });
 });

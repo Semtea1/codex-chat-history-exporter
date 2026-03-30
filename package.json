@@ -1,12 +1,19 @@
 {
   "name": "codex-chat-history-exporter",
-  "version": "0.1.4",
-  "private": true,
+  "version": "0.1.5",
   "license": "MIT",
   "displayName": "Codex Chat History Exporter",
-  "publisher": "local",
-  "description": "Codex chat history exporter shared core and VS Code extension",
+  "publisher": "seamtea1",
+  "description": "Export Codex chat history from desktop, VS Code, and CLI sessions with transcript, hidden context, and tool traces.",
   "main": "./dist/vscode/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Semtea1/codex-chat-history-exporter.git"
+  },
+  "homepage": "https://github.com/Semtea1/codex-chat-history-exporter",
+  "bugs": {
+    "url": "https://github.com/Semtea1/codex-chat-history-exporter/issues"
+  },
   "engines": {
     "vscode": "^1.97.0"
   },
@@ -88,7 +95,7 @@
             "null"
           ],
           "default": null,
-          "description": "Override the local .codex root directory. If empty, CODEX_HOME or %USERPROFILE%\\\\.codex is used."
+          "description": "Override the local .codex root directory. If empty, CODEX_HOME is preferred, otherwise the extension falls back to the current user's .codex home directory."
         },
         "codexChatExporter.defaultOutputDir": {
           "type": [

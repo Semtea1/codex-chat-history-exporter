@@ -18,10 +18,13 @@ export function resolveExtensionRuntimeConfig(
   const configuredMaxSessions = configuration.get<number>("maxSessionsInWizard", 1000) ?? 1000;
   const showInternalSessions = configuration.get<boolean>("showInternalSessions", false) ?? false;
 
+  const homeDir = env.USERPROFILE ?? env.HOME ?? "";
+  const defaultCodexRoot =
+    env.CODEX_HOME ||
+    (homeDir ? `${homeDir}${homeDir.includes("\\") ? "\\" : "/"}${".codex"}` : ".codex");
+
   const codexRoot =
-    configuredCodexRoot && configuredCodexRoot.trim()
-      ? configuredCodexRoot.trim()
-      : env.CODEX_HOME || `${env.USERPROFILE ?? ""}\\.codex`;
+    configuredCodexRoot && configuredCodexRoot.trim() ? configuredCodexRoot.trim() : defaultCodexRoot;
 
   const defaultOutputDir =
     configuredOutputDir && configuredOutputDir.trim() ? configuredOutputDir.trim() : undefined;
