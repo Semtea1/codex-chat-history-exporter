@@ -1,10 +1,19 @@
 {
   "name": "codex-chat-history-exporter",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "MIT",
   "displayName": "Codex Chat History Exporter",
   "publisher": "semtea1",
   "description": "Export Codex chat history from desktop, VS Code, and CLI sessions with transcript, hidden context, and tool traces.",
+  "icon": "media/marketplace-icon.png",
+  "keywords": [
+    "codex",
+    "chat",
+    "export",
+    "markdown",
+    "history",
+    "transcript"
+  ],
   "main": "./dist/vscode/extension.js",
   "repository": {
     "type": "git",

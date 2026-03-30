@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- 新增茶杯头像风格 Marketplace 图标
+- 优化 GitHub README 展示，补充 Marketplace / Release / License 徽章
+- 为 Marketplace 发布准备新的 0.1.6 包
 ## 0.1.5
 
 - 将扩展 `publisher` 调整为 `seamtea1`，补齐 Marketplace 发布所需元信息
