@@ -46,6 +46,45 @@ function renderTimestamp(prefixEnabled: boolean, timestamp?: string): string {
   return `[\`${formatted}\`] `;
 }
 
+function renderTranscriptContentBlocks(
+  item: Extract<TimelineItem, { kind: "transcript" }>,
+  includeMessageTimestamps: boolean
+): string {
+  if (!item.contentBlocks || item.contentBlocks.length === 0) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  let textBuffer = "";
+
+  const flushTextBuffer = (): void => {
+    const normalized = textBuffer.trim();
+    if (normalized) {
+      parts.push(normalized);
+    }
+    textBuffer = "";
+  };
+
+  for (const block of item.contentBlocks) {
+    if (block.type === "text") {
+      textBuffer += block.text;
+      continue;
+    }
+
+    flushTextBuffer();
+    parts.push(`![${block.alt || `${item.role}-${item.turn}`}](${block.image})`);
+  }
+
+  flushTextBuffer();
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  const normalized = parts.join("\n\n");
+  return includeMessageTimestamps ? `${renderTimestamp(true, item.timestamp)}${normalized}` : normalized;
+}
+
 function renderTranscriptItems(
   items: TimelineItem[],
   includeMessageTimestamps: boolean,
@@ -59,6 +98,14 @@ function renderTranscriptItems(
     }
     parts.push(`${heading(itemLevel, `${item.role === "user" ? "User" : "Assistant"} ${item.turn}`)}`);
     parts.push("");
+
+    const renderedBlocks = renderTranscriptContentBlocks(item, includeMessageTimestamps);
+    if (renderedBlocks) {
+      parts.push(renderedBlocks);
+      parts.push("");
+      continue;
+    }
+
     const segments =
       item.segments && item.segments.length > 0
         ? item.segments

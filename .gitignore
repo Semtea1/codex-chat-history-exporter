@@ -4,6 +4,7 @@ dist/
 outputs/
 exports/
 temp/
+release/
 *.vsix
 *.vsix.zip
 *.log

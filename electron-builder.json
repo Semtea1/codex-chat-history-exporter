@@ -1,0 +1,29 @@
+{
+  "appId": "com.semtea.codex-chat-exporter.desktop",
+  "productName": "Codex Chat Exporter Desktop",
+  "directories": {
+    "output": "release"
+  },
+  "icon": "media/desktop-app.ico",
+  "files": [
+    "dist/**/*",
+    "media/**/*",
+    "package.json"
+  ],
+  "asar": true,
+  "extraMetadata": {
+    "main": "dist/desktop/main.js"
+  },
+  "win": {
+    "icon": "media/desktop-app.ico",
+    "target": [
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "Codex-Chat-Exporter-Desktop-${version}.${ext}"
+  }
+}

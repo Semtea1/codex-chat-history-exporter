@@ -108,6 +108,9 @@ describe("exportWizard", () => {
     expect(html).toContain("Child Session");
     expect(html).toContain("session_meta");
     expect(html).toContain("生成导出文件");
+    expect(html).toContain("success-modal");
+    expect(html).toContain("export-button-label");
+    expect(html).toContain("打开文件夹");
   });
 
   it("embeds initial JSON payload for client-side interactivity", () => {
@@ -131,5 +134,39 @@ describe("exportWizard", () => {
     expect(html).toContain('"includeChildSessionsAsAppendix":true');
     expect(html).toContain("acquireVsCodeApi");
     expect(html).toContain('window.addEventListener("message"');
+  });
+
+  it("renders desktop shell controls when app shell config is provided", () => {
+    const html = renderExportWizardHtml({
+      profiles: getBuiltinProfiles(),
+      sections: getAllSectionDefinitions(),
+      sessions,
+      childPreviewMap: {},
+      uiState: {
+        selectedProfileId: "reading",
+        selectedSessionIds: [],
+        outputDir: "E:/exports"
+      },
+      appShell: {
+        mode: "desktop",
+        codexRoot: "C:/Users/test/.codex",
+        canCreateDesktopShortcut: true,
+        recentExports: [
+          {
+            id: "export-1",
+            outputDir: "E:/exports/demo",
+            createdAt: "2026-04-10T16:00:00Z",
+            exportedCount: 1,
+            primaryDocumentPath: "E:/exports/demo/transcript.md"
+          }
+        ]
+      }
+    });
+
+    expect(html).toContain("桌面版增强");
+    expect(html).toContain("Codex 数据目录");
+    expect(html).toContain("创建桌面快捷方式");
+    expect(html).toContain("最近导出历史");
+    expect(html).toContain("打开 transcript");
   });
 });

@@ -253,4 +253,39 @@ describe("session-index", () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.title).toBe("真正的标题应该是这句");
   });
+  it("sanitizes image placeholders in inferred session titles", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-chat-history-"));
+    tempRoots.push(root);
+
+    const codexRoot = join(root, ".codex");
+    const sessionsDir = join(codexRoot, "sessions", "2026", "04", "10");
+    await mkdir(sessionsDir, { recursive: true });
+
+    await writeJsonl(join(sessionsDir, "cli-image-title.jsonl"), [
+      {
+        timestamp: "2026-04-10T02:20:57Z",
+        type: "session_meta",
+        payload: {
+          id: "cli-image-title-1",
+          timestamp: "2026-04-10T02:20:57Z",
+          cwd: "C:/repo",
+          originator: "codex_cli_rs",
+          source: "cli"
+        }
+      },
+      {
+        timestamp: "2026-04-10T02:20:58Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "修复这个 [Image #1] 警告"
+        }
+      }
+    ]);
+
+    const sessions = await scanSessions(codexRoot);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.title).toBe("修复这个 （图片） 警告");
+  });
 });

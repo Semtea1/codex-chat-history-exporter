@@ -92,6 +92,104 @@ describe("exporter", () => {
     expect(transcript).toContain("助手回复");
   });
 
+  it("renders image placeholders inline for cli-style user messages", async () => {
+    const root = await mkdtemp(join(tmpdir(), "chat-exporter-"));
+    tempRoots.push(root);
+
+    const codexRoot = join(root, ".codex");
+    const sessionsDir = join(codexRoot, "sessions", "2026", "04", "10");
+    await mkdir(sessionsDir, { recursive: true });
+
+    const clipboardImagePath = join(root, "clipboard-image.png");
+    await writeFile(clipboardImagePath, Buffer.from(ONE_PIXEL_PNG_BASE64, "base64"));
+
+    const sessionPath = join(sessionsDir, "session-inline-image.jsonl");
+    await writeFile(
+      sessionPath,
+      [
+        JSON.stringify({
+          timestamp: "2026-04-10T02:20:57.000Z",
+          type: "session_meta",
+          payload: {
+            id: "session-inline-image",
+            timestamp: "2026-04-10T02:20:57.000Z",
+            cwd: "C:/repo",
+            originator: "Codex CLI",
+            source: "exec"
+          }
+        }),
+        JSON.stringify({
+          type: "turn_context",
+          payload: { turn_id: "turn-inline-image" }
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-10T02:20:57.530Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              { type: "input_text", text: "<image name=[Image #1]>" },
+              { type: "input_image", image_url: `data:image/png;base64,${ONE_PIXEL_PNG_BASE64}` },
+              { type: "input_text", text: "</image>" },
+              { type: "input_text", text: "Fix this [Image #1] please" }
+            ]
+          }
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-10T02:20:57.530Z",
+          type: "event_msg",
+          payload: {
+            type: "user_message",
+            message: "Fix this [Image #1] please",
+            images: [],
+            local_images: [clipboardImagePath],
+            text_elements: [
+              {
+                placeholder: "[Image #1]"
+              }
+            ]
+          }
+        }),
+        JSON.stringify({
+          timestamp: "2026-04-10T02:20:58.000Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Image handled." }]
+          }
+        })
+      ].join("\n"),
+      "utf8"
+    );
+
+    const summary: SessionSummary = {
+      sessionId: "session-inline-image",
+      title: "Inline Image Session",
+      kind: "cli",
+      originator: "Codex CLI",
+      source: "exec",
+      cwd: "C:/repo",
+      timestamp: "2026-04-10T02:20:57.000Z",
+      updatedAt: "2026-04-10T02:20:58.000Z",
+      path: sessionPath
+    };
+
+    const outputRoot = join(root, "outputs");
+    const result = await exportSession(summary, getBuiltinProfiles()[0]!, outputRoot);
+
+    expect(result.assetFiles).toHaveLength(1);
+
+    const { readFile } = await import("node:fs/promises");
+    const transcript = await readFile(result.documents[0]!, "utf8");
+    expect(transcript).toContain("Fix this");
+    expect(transcript).toContain("![Image #1](assets/");
+    expect(transcript).toContain("please");
+    expect(transcript).toContain("Image handled.");
+    expect(transcript).not.toContain("[Image #1] please");
+  });
+
   it("exports a forensics profile session into split documents", async () => {
     const root = await mkdtemp(join(tmpdir(), "chat-exporter-"));
     tempRoots.push(root);

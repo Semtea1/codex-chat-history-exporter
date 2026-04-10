@@ -6,38 +6,17 @@ import { exportSession } from "../../core/exporter";
 import { getBuiltinProfiles, validateProfile } from "../../core/profile";
 import { getAllSectionDefinitions } from "../../core/section-groups";
 import { buildChildSessionMap, scanSessions } from "../../core/session-index";
-import { loadSessionRowsFromSummary } from "../../core/session-loader";
-import { normalizeTimeline } from "../../core/timeline";
+import {
+  buildChildSessionPreviewMap,
+  buildProfileFromWizardPayload,
+  writeExportIndex
+} from "../../shared/export-wizard-shared";
 import type { ExportProfile, SessionSummary } from "../../core/types";
 import type { ExtensionRuntimeConfig } from "../config";
 import { ProfileStore } from "../state/profileStore";
 import { UiStateStore } from "../state/uiStateStore";
 import { renderExportWizardHtml } from "../webview/exportWizard";
-
-interface ChildSessionPreview {
-  sessionId: string;
-  title: string;
-  updatedAt: string;
-  agentNickname?: string;
-  agentRole?: string;
-  parentSessionId?: string;
-  previewText: string;
-}
-
-interface WizardPayload {
-  selectedProfileId: string;
-  selectedSessionIds: string[];
-  outputDir: string;
-  documentMode: ExportProfile["documentMode"];
-  hiddenContentMode: ExportProfile["hiddenContentMode"];
-  toolTraceLevel: ExportProfile["toolTraceLevel"];
-  includeMessageTimestamps: boolean;
-  includeChildSessionsAsAppendix: boolean;
-  includedSections: ExportProfile["includedSections"];
-  start?: string;
-  end?: string;
-  customProfileName?: string;
-}
+import type { WizardPayload } from "../../shared/export-wizard-shared";
 
 function slugify(value: string): string {
   return value
@@ -45,41 +24,6 @@ function slugify(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "") || "custom-profile";
-}
-
-function buildProfileFromWizardPayload(payload: WizardPayload, sourceProfile?: ExportProfile): ExportProfile {
-  return {
-    id: sourceProfile?.id ?? "reading",
-    name: sourceProfile?.name ?? "临时导出模式",
-    description: sourceProfile?.description ?? "由导出向导生成的临时配置。",
-    includedSections: payload.includedSections,
-    documentMode: payload.documentMode,
-    hiddenContentMode: payload.hiddenContentMode,
-    toolTraceLevel: payload.toolTraceLevel,
-    includeMessageTimestamps: payload.includeMessageTimestamps,
-    includeChildSessionsAsAppendix: payload.includeChildSessionsAsAppendix,
-    transcriptTimeFilter:
-      payload.start || payload.end
-        ? {
-            enabled: true,
-            start: payload.start,
-            end: payload.end
-          }
-        : undefined,
-    linkedTraceTimeBehavior: sourceProfile?.linkedTraceTimeBehavior ?? "related_only",
-    defaultOutputDir: payload.outputDir || sourceProfile?.defaultOutputDir,
-    builtin: sourceProfile?.builtin ?? false
-  };
-}
-
-async function writeIndex(outputDir: string, rows: Array<{ title: string; sessionDir: string }>): Promise<void> {
-  await mkdir(outputDir, { recursive: true });
-  const lines = ["# Export Index", ""];
-  for (const row of rows) {
-    const folderName = row.sessionDir.split(/[\\/]/).pop() ?? row.sessionDir;
-    lines.push(`- [${row.title}](${folderName}/transcript.md)`);
-  }
-  await writeFile(join(outputDir, "index.md"), `${lines.join("\n")}\n`, "utf8");
 }
 
 async function postProfilesUpdated(
@@ -95,50 +39,6 @@ async function postProfilesUpdated(
       selectedProfileId
     }
   });
-}
-
-function summarizeChildSessionContent(summary: SessionSummary, limit = 260): Promise<string> {
-  return loadSessionRowsFromSummary(summary)
-    .then((rows) => normalizeTimeline(rows))
-    .then((items) => {
-      const transcript = items
-        .filter((item) => item.kind === "transcript")
-        .slice(0, 4)
-        .map((item) => `${item.role === "user" ? "用户" : "助手"}：${item.text}`)
-        .filter(Boolean)
-        .join("\n\n")
-        .trim();
-
-      if (!transcript) {
-        return "该子会话暂无可预览的正文内容。";
-      }
-
-      return transcript.length <= limit ? transcript : `${transcript.slice(0, limit)}…`;
-    })
-    .catch(() => "该子会话预览读取失败。");
-}
-
-async function buildChildSessionPreviewMap(sessions: SessionSummary[]): Promise<Record<string, ChildSessionPreview[]>> {
-  const childSessionMap = buildChildSessionMap(sessions);
-  const previewEntries = await Promise.all(
-    [...childSessionMap.entries()].map(async ([parentSessionId, childSessions]) => {
-      const previews = await Promise.all(
-        childSessions.map(async (session) => ({
-          sessionId: session.sessionId,
-          title: session.title,
-          updatedAt: session.updatedAt || session.timestamp,
-          agentNickname: session.agentNickname,
-          agentRole: session.agentRole,
-          parentSessionId: session.parentSessionId,
-          previewText: await summarizeChildSessionContent(session)
-        }))
-      );
-
-      return [parentSessionId, previews] as const;
-    })
-  );
-
-  return Object.fromEntries(previewEntries);
 }
 
 export async function openExportWizard(
@@ -180,7 +80,7 @@ export async function openExportWizard(
 
   await render();
 
-  panel.webview.onDidReceiveMessage(async (message: { type: string; payload?: WizardPayload }) => {
+  panel.webview.onDidReceiveMessage(async (message: { type: string; payload?: WizardPayload | { outputDir?: string; path?: string } }) => {
     if (message.type === "pickOutputDir") {
       const pickedFolder = await vscode.window.showOpenDialog({
         canSelectFiles: false,
@@ -201,11 +101,27 @@ export async function openExportWizard(
       return;
     }
 
+    if (message.type === "openExportFolder") {
+      const outputDir = (message.payload as { outputDir?: string } | undefined)?.outputDir;
+      if (outputDir?.trim()) {
+        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(outputDir));
+      }
+      return;
+    }
+
+    if (message.type === "openExportDocument") {
+      const path = (message.payload as { path?: string } | undefined)?.path;
+      if (path?.trim()) {
+        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(path));
+      }
+      return;
+    }
+
     if (!message.payload) {
       return;
     }
 
-    const payload = message.payload;
+    const payload = message.payload as WizardPayload;
     const sourceProfile = (await profileStore.getProfile(payload.selectedProfileId)) ?? getBuiltinProfiles()[0];
     if (!sourceProfile) {
       throw new Error("No export profile is available.");
@@ -238,6 +154,12 @@ export async function openExportWizard(
         type: "status",
         payload: { text: validation.errors.join("；") }
       });
+      if (message.type === "export") {
+        await panel.webview.postMessage({
+          type: "exportFailed",
+          payload: { text: validation.errors.join("；") }
+        });
+      }
       return;
     }
 
@@ -313,12 +235,20 @@ export async function openExportWizard(
         type: "status",
         payload: { text: "请先选择导出目录。" }
       });
+      await panel.webview.postMessage({
+        type: "exportFailed",
+        payload: { text: "请先选择导出目录。" }
+      });
       return;
     }
 
     if (payload.selectedSessionIds.length === 0) {
       await panel.webview.postMessage({
         type: "status",
+        payload: { text: "请至少勾选一条会话再导出。" }
+      });
+      await panel.webview.postMessage({
+        type: "exportFailed",
         payload: { text: "请至少勾选一条会话再导出。" }
       });
       return;
@@ -333,48 +263,78 @@ export async function openExportWizard(
         type: "status",
         payload: { text: "未找到已勾选的会话。" }
       });
+      await panel.webview.postMessage({
+        type: "exportFailed",
+        payload: { text: "未找到已勾选的会话。" }
+      });
       return;
     }
 
     const indexRows: Array<{ title: string; sessionDir: string }> = [];
-
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "正在导出 Codex 会话",
-        cancellable: false
-      },
-      async (progress) => {
-        let completed = 0;
-        for (const session of selectedSessions) {
-          progress.report({
-            message: session.title,
-            increment: 100 / selectedSessions.length
-          });
-
-          const result = await exportSession(session, transientProfile, payload.outputDir, {
-            childSessions: transientProfile.includeChildSessionsAsAppendix ? childSessionMap.get(session.sessionId) ?? [] : []
-          });
-
-          indexRows.push({ title: session.title, sessionDir: result.outputDir });
-          completed += 1;
-
-          await panel.webview.postMessage({
-            type: "status",
-            payload: { text: `已导出 ${completed} / ${selectedSessions.length} 条会话。` }
-          });
-        }
+    await panel.webview.postMessage({
+      type: "exportStarted",
+      payload: {
+        text: `正在导出 ${selectedSessions.length} 条会话，请稍候。`,
+        label: "正在导出..."
       }
-    );
+    });
 
-    await writeIndex(payload.outputDir, indexRows);
-    const action = await vscode.window.showInformationMessage(
-      `已导出 ${selectedSessions.length} 条会话到 ${payload.outputDir}`,
-      "打开文件夹"
-    );
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "正在导出 Codex 会话",
+          cancellable: false
+        },
+        async (progress) => {
+          let completed = 0;
+          for (const session of selectedSessions) {
+            progress.report({
+              message: session.title,
+              increment: 100 / selectedSessions.length
+            });
 
-    if (action === "打开文件夹") {
-      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(payload.outputDir));
+            const result = await exportSession(session, transientProfile, payload.outputDir, {
+              childSessions: transientProfile.includeChildSessionsAsAppendix ? childSessionMap.get(session.sessionId) ?? [] : []
+            });
+
+            indexRows.push({ title: session.title, sessionDir: result.outputDir });
+            completed += 1;
+
+            await panel.webview.postMessage({
+              type: "status",
+              payload: { text: `已导出 ${completed} / ${selectedSessions.length} 条会话。`, tone: "progress" }
+            });
+            await panel.webview.postMessage({
+              type: "exportProgress",
+              payload: {
+                text: `已导出 ${completed} / ${selectedSessions.length} 条会话。`,
+                percent: Math.round((completed / selectedSessions.length) * 100)
+              }
+            });
+          }
+        }
+      );
+
+      await writeExportIndex(payload.outputDir, indexRows);
+      const primaryDocumentPath =
+        selectedSessions.length === 1
+          ? join(indexRows[0]!.sessionDir, "transcript.md")
+          : join(payload.outputDir, "index.md");
+      await panel.webview.postMessage({
+        type: "exportFinished",
+        payload: {
+          text: `已导出 ${selectedSessions.length} 条会话到 ${payload.outputDir}`,
+          outputDir: payload.outputDir,
+          exportedCount: selectedSessions.length,
+          primaryDocumentPath
+        }
+      });
+    } catch (error) {
+      await panel.webview.postMessage({
+        type: "exportFailed",
+        payload: { text: error instanceof Error ? error.message : String(error) }
+      });
     }
   });
 }

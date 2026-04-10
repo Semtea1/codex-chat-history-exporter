@@ -82,11 +82,27 @@ export interface TimelineBaseItem {
   sectionId: ExportSectionId;
 }
 
+export interface TranscriptTextBlock {
+  type: "text";
+  text: string;
+}
+
+export interface TranscriptImageBlock {
+  type: "image";
+  image: string;
+  inline: boolean;
+  alt?: string;
+  placeholder?: string;
+}
+
+export type TranscriptContentBlock = TranscriptTextBlock | TranscriptImageBlock;
+
 export interface TranscriptTimelineItem extends TimelineBaseItem {
   kind: "transcript";
   role: "user" | "assistant";
   text: string;
   images: string[];
+  contentBlocks?: TranscriptContentBlock[];
   source: "event_msg" | "response_item";
   segments?: Array<{
     timestamp?: string;

@@ -13,6 +13,21 @@ interface ChildSessionPreview {
 
 type SessionTypeFilter = "all" | "main" | "child" | "internal";
 
+export interface RecentExportEntry {
+  id: string;
+  outputDir: string;
+  createdAt: string;
+  exportedCount: number;
+  primaryDocumentPath?: string;
+}
+
+export interface AppShellConfig {
+  mode: "vscode" | "desktop";
+  codexRoot?: string;
+  canCreateDesktopShortcut?: boolean;
+  recentExports?: RecentExportEntry[];
+}
+
 export interface ExportWizardRenderInput {
   profiles: ExportProfile[];
   sections: ExportSectionDefinition[];
@@ -20,6 +35,7 @@ export interface ExportWizardRenderInput {
   childPreviewMap: Record<string, ChildSessionPreview[]>;
   uiState: UiState;
   maxSessionsInWizard?: number;
+  appShell?: AppShellConfig;
 }
 
 function escapeHtml(value: string): string {
@@ -200,6 +216,78 @@ function countSessionsByType(sessions: SessionSummary[]): Record<Exclude<Session
   );
 }
 
+function renderRecentExports(entries: RecentExportEntry[]): string {
+  if (entries.length === 0) {
+    return `<div class="empty-state empty-state--compact">最近还没有导出记录，完成一次导出后会显示在这里。</div>`;
+  }
+
+  return entries
+    .map(
+      (entry) => `
+        <article class="history-card">
+          <div class="history-copy">
+            <div class="history-title">${escapeHtml(entry.outputDir.split(/[\\/]/).pop() || entry.outputDir)}</div>
+            <p class="history-meta">${escapeHtml(entry.createdAt)} · ${escapeHtml(String(entry.exportedCount))} 条会话</p>
+            <p class="history-path">${escapeHtml(entry.outputDir)}</p>
+          </div>
+          <div class="history-actions">
+            ${
+              entry.primaryDocumentPath
+                ? `<button type="button" class="button" data-history-open-document="${escapeHtml(entry.primaryDocumentPath)}">打开 transcript</button>`
+                : ""
+            }
+            <button type="button" class="button" data-history-open-folder="${escapeHtml(entry.outputDir)}">打开目录</button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderDesktopShell(input: ExportWizardRenderInput): string {
+  if (input.appShell?.mode !== "desktop") {
+    return "";
+  }
+
+  return `
+    <section class="desktop-shell-card">
+      <div class="desktop-shell-header">
+        <div>
+          <h2 class="desktop-shell-title">桌面版增强</h2>
+          <p class="desktop-shell-copy">这里管理独立 exe 的数据根目录、最近导出历史和快捷入口。</p>
+        </div>
+        ${
+          input.appShell.canCreateDesktopShortcut
+            ? `<button type="button" class="button" id="create-shortcut-button">创建桌面快捷方式</button>`
+            : ""
+        }
+      </div>
+      <div class="desktop-shell-grid">
+        <section class="settings-card">
+          <div class="field-group">
+            <label class="field-label" for="codex-root">Codex 数据目录</label>
+            <div class="search-row">
+              <input class="input" id="codex-root" type="text" value="${escapeHtml(input.appShell.codexRoot || "")}" placeholder="选择 .codex 目录" />
+              <button class="button" id="pick-codex-root">浏览</button>
+              <span></span>
+            </div>
+            <p class="field-help">切换后会重新扫描会话列表，不需要重启应用。</p>
+          </div>
+        </section>
+        <section class="settings-card">
+          <div class="desktop-history-header">
+            <div>
+              <h3>最近导出历史</h3>
+              <p class="field-help">保留最近几次导出，便于快速回看 transcript 或打开目录。</p>
+            </div>
+          </div>
+          <div class="history-list" id="recent-export-list">${renderRecentExports(input.appShell.recentExports || [])}</div>
+        </section>
+      </div>
+    </section>
+  `;
+}
+
 export function renderExportWizardHtml(input: ExportWizardRenderInput): string {
   const initialData = JSON.stringify(input).replace(/</g, "\\u003c");
   const maxSessions = input.maxSessionsInWizard ?? 1000;
@@ -233,15 +321,58 @@ export function renderExportWizardHtml(input: ExportWizardRenderInput): string {
       .action-summary{min-width:0}
       .action-title{margin:0;font-size:18px;font-weight:700;color:var(--text)}
       .action-chip{display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.78);border-color:rgba(193,204,224,.54);color:#5f7495;font-size:12px;font-weight:600}
-      .status-line{min-height:18px}
+      .status-line{min-height:18px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.58);border:1px solid transparent;transition:all .2s ease}
+      .status-line[data-tone="progress"]{background:rgba(91,146,247,.12);border-color:rgba(91,146,247,.18);color:#4b78be}
+      .status-line[data-tone="success"]{background:rgba(116,184,22,.12);border-color:rgba(116,184,22,.18);color:#4f7b17}
+      .status-line[data-tone="error"]{background:rgba(239,124,155,.12);border-color:rgba(239,124,155,.2);color:#a84766}
+      .progress-shell{display:grid;gap:8px}
+      .progress-shell[hidden]{display:none !important}
+      .progress-track{height:10px;border-radius:999px;background:rgba(183,196,219,.26);overflow:hidden}
+      .progress-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#7fb6ff,#5b92f7,#3b82f6);transition:width .22s ease}
+      .progress-meta{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+      .progress-label{font-size:12px;color:#4b78be}
+      .primary-button--export{position:relative;overflow:hidden;transition:transform .14s ease,box-shadow .18s ease,opacity .18s ease}
+      .primary-button--export:hover{transform:translateY(-1px);box-shadow:0 22px 40px rgba(17,24,39,.2)}
+      .primary-button--export:active{transform:translateY(1px) scale(.985)}
+      .primary-button--export[disabled]{cursor:progress;opacity:.92;box-shadow:0 12px 26px rgba(17,24,39,.14)}
+      .primary-button--export.is-busy{background:linear-gradient(135deg,#374151,#111827)}
+      .button-label{display:inline-flex;align-items:center;justify-content:center;gap:10px}
+      .button-spinner{width:16px;height:16px;border-radius:999px;border:2px solid rgba(255,255,255,.26);border-top-color:#fff;animation:spin .75s linear infinite}
+      .button-pulse{position:absolute;inset:0;background:linear-gradient(120deg,transparent 0%,rgba(255,255,255,.14) 38%,transparent 70%);transform:translateX(-110%);opacity:0}
+      .primary-button--export.is-busy .button-pulse{opacity:1;animation:sweep 1.2s ease infinite}
+      .success-modal-backdrop{position:fixed;inset:0;background:rgba(17,24,39,.22);backdrop-filter:blur(8px);display:grid;place-items:center;padding:24px;z-index:50}
+      .success-modal-backdrop[hidden]{display:none !important}
+      .success-modal{width:min(520px,calc(100vw - 48px));border-radius:28px;border:1px solid rgba(255,255,255,.84);background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(246,249,255,.92));box-shadow:0 30px 70px rgba(34,50,77,.22);padding:24px;display:grid;gap:16px}
+      .success-hero{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:start}
+      .success-icon{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(116,184,22,.16),rgba(91,146,247,.14));color:#4f7b17;font-size:24px;font-weight:700}
+      .success-title{margin:0;font-size:22px;font-weight:800;color:var(--text)}
+      .success-copy,.success-meta{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+      .success-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+      .success-close{appearance:none;border:none;background:transparent;color:#93a3b9;font-size:24px;line-height:1;cursor:pointer;padding:0 4px}
+      .success-close:hover{color:#5f7495}
+      .desktop-shell-card{display:grid;gap:14px;padding:18px 20px;border-radius:24px;border:1px solid rgba(255,255,255,.82);background:var(--card);box-shadow:var(--shadow)}
+      .desktop-shell-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+      .desktop-shell-header,.desktop-history-header,.history-card,.history-actions{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+      .desktop-shell-title{margin:0;font-size:20px;line-height:1.2}
+      .desktop-shell-copy,.history-meta,.history-path{margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+      .history-list{display:grid;gap:10px}
+      .history-card{padding:12px 14px;border-radius:18px;border:1px solid rgba(91,146,247,.14);background:rgba(255,255,255,.72)}
+      .history-copy{display:grid;gap:4px;min-width:0}
+      .history-title{font-size:14px;font-weight:700;color:var(--text);word-break:break-word}
+      .history-path{word-break:break-all}
+      .history-actions{justify-content:flex-end}
+      .empty-state--compact{padding:16px}
+      @keyframes spin{to{transform:rotate(360deg)}}
+      @keyframes sweep{from{transform:translateX(-110%)}to{transform:translateX(110%)}}
       code{background:rgba(91,146,247,.1);padding:2px 6px;border-radius:8px;color:#7a5a17}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:999px;border:1px solid rgba(255,255,255,.32)}
-      @media (max-width:1180px){.stats,.settings-grid,.filter-grid,.date-grid,.split,.action-card{grid-template-columns:1fr}.search-row{grid-template-columns:1fr}.toolbar,.footer-meta,.session-top,.relationship-box,.toggle-row,.child-header,.action-metrics{flex-direction:column;align-items:stretch}.primary-button--export{width:100%;min-width:0}}
+      @media (max-width:1180px){.stats,.settings-grid,.filter-grid,.date-grid,.split,.action-card,.desktop-shell-grid{grid-template-columns:1fr}.search-row{grid-template-columns:1fr}.toolbar,.footer-meta,.session-top,.relationship-box,.toggle-row,.child-header,.action-metrics,.desktop-shell-header,.desktop-history-header,.history-card,.history-actions{flex-direction:column;align-items:stretch}.primary-button--export{width:100%;min-width:0}}
     </style>
   </head>
   <body>
     <div class="page">
       <div class="topbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><div class="brand"><span class="brand-mark">CE</span><span>Codex Chat Exporter</span></div></div>
       <div class="hero"><h1>会话选择</h1><p>上半区负责找会话和勾选会话；内部会话切到对应类型筛选后可直接导出。</p></div>
+      ${renderDesktopShell(input)}
       <div class="stats">
         <div class="stat-card"><div class="stat-value">${stats.total}</div><div class="stat-label">总会话</div></div>
         <div class="stat-card"><div class="stat-value">${stats.internal}</div><div class="stat-label">内部会话</div></div>
@@ -274,8 +405,15 @@ export function renderExportWizardHtml(input: ExportWizardRenderInput): string {
         </div>
         <div class="action-card">
           <div class="action-summary">
-            <div class="status-line" id="status-line"></div>
-            <p class="action-eyebrow">准备导出</p>
+            <div class="status-line" id="status-line" data-tone="idle"></div>
+            <div class="progress-shell" id="export-progress-shell" hidden>
+              <div class="progress-track"><div class="progress-fill" id="export-progress-fill"></div></div>
+              <div class="progress-meta">
+                <span class="progress-label" id="export-progress-label">正在准备导出</span>
+                <span class="action-chip" id="export-progress-chip">0%</span>
+              </div>
+            </div>
+            <p class="action-eyebrow" id="action-eyebrow">准备导出</p>
             <h3 class="action-title">确认当前选择后再生成导出文件</h3>
             <div class="action-metrics">
               <span class="action-chip" id="selection-summary">已选 ${selectedCount} 条会话</span>
@@ -284,20 +422,40 @@ export function renderExportWizardHtml(input: ExportWizardRenderInput): string {
             <p class="action-caption">按钮固定放在右侧主操作位，避免落在整条底栏左下角。</p>
           </div>
           <div class="export-cta">
-            <button class="primary-button primary-button--export" id="export-button">生成导出文件</button>
-            <p class="action-caption">导出结果会写入当前选择的导出目录。</p>
+            <button class="primary-button primary-button--export" id="export-button"><span class="button-label" id="export-button-label">生成导出文件</span><span class="button-pulse" aria-hidden="true"></span></button>
+            <p class="action-caption" id="export-caption">导出结果会写入当前选择的导出目录。</p>
           </div>
         </div>
       </section>
+    </div>
+    <div class="success-modal-backdrop" id="success-modal" hidden>
+      <div class="success-modal" role="dialog" aria-modal="true" aria-labelledby="success-title">
+        <div class="success-hero">
+          <div class="success-icon">✓</div>
+          <div>
+            <h3 class="success-title" id="success-title">导出完成</h3>
+            <p class="success-copy" id="success-copy">本次导出已经写入目标目录，你可以立即打开文件夹检查结果。</p>
+          </div>
+          <button type="button" class="success-close" id="success-close" aria-label="关闭">×</button>
+        </div>
+        <p class="success-meta" id="success-meta"></p>
+        <div class="success-actions">
+          <button type="button" class="button" id="success-open-document-button">打开 transcript</button>
+          <button type="button" class="button" id="success-dismiss-button">继续查看</button>
+          <button type="button" class="button" id="success-rerun-button">重新导出</button>
+          <button type="button" class="primary-button" id="success-open-folder-button">打开文件夹</button>
+        </div>
+      </div>
     </div>
     <script id="initial-data" type="application/json">${initialData}</script>
     <script>
       const vscode = acquireVsCodeApi();
       const initialData = JSON.parse(document.getElementById("initial-data").textContent);
       const maxSessions = Number(initialData.maxSessionsInWizard || 1000);
-      const state = { profiles: initialData.profiles, sessions: Array.isArray(initialData.sessions) ? initialData.sessions.slice(0, maxSessions) : [], selectedProfileId: initialData.uiState.selectedProfileId || "reading", selectedSessionIds: new Set(initialData.uiState.selectedSessionIds || []), outputDir: initialData.uiState.outputDir || "", includeMessageTimestamps: Boolean(initialData.uiState.includeMessageTimestamps), includeChildSessionsAsAppendix: Boolean(initialData.uiState.includeChildSessionsAsAppendix), start: initialData.uiState.start || "", end: initialData.uiState.end || "" };
+      const state = { profiles: initialData.profiles, sessions: Array.isArray(initialData.sessions) ? initialData.sessions.slice(0, maxSessions) : [], selectedProfileId: initialData.uiState.selectedProfileId || "reading", selectedSessionIds: new Set(initialData.uiState.selectedSessionIds || []), outputDir: initialData.uiState.outputDir || "", includeMessageTimestamps: Boolean(initialData.uiState.includeMessageTimestamps), includeChildSessionsAsAppendix: Boolean(initialData.uiState.includeChildSessionsAsAppendix), start: initialData.uiState.start || "", end: initialData.uiState.end || "", codexRoot: initialData.appShell && initialData.appShell.codexRoot ? initialData.appShell.codexRoot : "", recentExports: initialData.appShell && Array.isArray(initialData.appShell.recentExports) ? initialData.appShell.recentExports : [], exporting: false, lastExportOutputDir: "", lastExportPrimaryDocumentPath: "" };
       const profileSelect = document.getElementById("profile-select");
       const outputDirInput = document.getElementById("output-dir");
+      const codexRootInput = document.getElementById("codex-root");
       const documentModeSelect = document.getElementById("document-mode");
       const hiddenContentModeSelect = document.getElementById("hidden-content-mode");
       const toolTraceLevelSelect = document.getElementById("tool-trace-level");
@@ -315,15 +473,69 @@ export function renderExportWizardHtml(input: ExportWizardRenderInput): string {
       const visibleCountChip = document.getElementById("visible-count");
       const selectionSummary = document.getElementById("selection-summary");
       const statusLine = document.getElementById("status-line");
+      const actionEyebrow = document.getElementById("action-eyebrow");
       const customProfileNameInput = document.getElementById("custom-profile-name");
       const sessionSearchInput = document.getElementById("session-search");
       const sessionList = document.getElementById("session-list");
       const emptyState = document.getElementById("empty-state");
+      const exportButton = document.getElementById("export-button");
+      const exportButtonLabel = document.getElementById("export-button-label");
+      const exportCaption = document.getElementById("export-caption");
+      const progressShell = document.getElementById("export-progress-shell");
+      const progressFill = document.getElementById("export-progress-fill");
+      const progressLabel = document.getElementById("export-progress-label");
+      const progressChip = document.getElementById("export-progress-chip");
+      const successModal = document.getElementById("success-modal");
+      const successCopy = document.getElementById("success-copy");
+      const successMeta = document.getElementById("success-meta");
+      const successClose = document.getElementById("success-close");
+      const successDismissButton = document.getElementById("success-dismiss-button");
+      const successOpenFolderButton = document.getElementById("success-open-folder-button");
+      const successOpenDocumentButton = document.getElementById("success-open-document-button");
+      const successRerunButton = document.getElementById("success-rerun-button");
+      const recentExportList = document.getElementById("recent-export-list");
+      const pickCodexRootButton = document.getElementById("pick-codex-root");
+      const createShortcutButton = document.getElementById("create-shortcut-button");
+      function escapeClientHtml(value){return String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");}
       function isoToDatetimeLocal(value){if(!value)return ""; const date=new Date(value); if(Number.isNaN(date.getTime()))return ""; const pad=(num)=>String(num).padStart(2,"0"); return [date.getFullYear(),"-",pad(date.getMonth()+1),"-",pad(date.getDate()),"T",pad(date.getHours()),":",pad(date.getMinutes())].join("");}
       function datetimeLocalToIso(value){if(!value)return undefined; const date=new Date(value); return Number.isNaN(date.getTime()) ? undefined : date.toISOString();}
       function datetimeLocalToMillis(value){if(!value)return undefined; const date=new Date(value); return Number.isNaN(date.getTime()) ? undefined : date.getTime();}
       function getProfile(profileId){return state.profiles.find((profile)=>profile.id===profileId) || state.profiles[0];}
-      function setStatus(text){statusLine.textContent=text || "";}
+      function setStatus(text,tone){statusLine.textContent=text || ""; statusLine.dataset.tone=tone || "idle";}
+      function setProgress(percent,label){
+        if(!progressShell || !progressFill || !progressLabel || !progressChip)return;
+        const normalized=Math.max(0,Math.min(100,Number(percent || 0)));
+        progressShell.hidden=normalized <= 0 && !state.exporting;
+        progressFill.style.width=normalized + "%";
+        progressLabel.textContent=label || "正在准备导出";
+        progressChip.textContent=Math.round(normalized) + "%";
+      }
+      function setExporting(exporting,label){
+        state.exporting=exporting;
+        exportButton.disabled=exporting;
+        exportButton.classList.toggle("is-busy",exporting);
+        exportButtonLabel.innerHTML=exporting ? '<span class="button-spinner" aria-hidden="true"></span><span>' + (label || "正在导出...") + '</span>' : "生成导出文件";
+        actionEyebrow.textContent=exporting ? "正在导出" : "准备导出";
+        exportCaption.textContent=exporting ? "正在写入会话与附属文档，请稍候，不需要重复点击。" : "导出结果会写入当前选择的导出目录。";
+        if(!exporting){setProgress(0,"正在准备导出"); progressShell.hidden=true;} else {progressShell.hidden=false;}
+      }
+      function hideSuccessModal(){successModal.hidden=true;}
+      function showSuccessModal(payload){
+        state.lastExportOutputDir=payload.outputDir || "";
+        state.lastExportPrimaryDocumentPath=payload.primaryDocumentPath || "";
+        successCopy.textContent=payload.text || "本次导出已经写入目标目录，你可以立即打开文件夹检查结果。";
+        successMeta.textContent=state.lastExportOutputDir ? "导出目录： " + state.lastExportOutputDir : "";
+        successOpenDocumentButton.disabled=!state.lastExportPrimaryDocumentPath;
+        successModal.hidden=false;
+      }
+      function renderRecentExports(entries){
+        if(!recentExportList)return;
+        if(!entries || entries.length===0){
+          recentExportList.innerHTML='<div class="empty-state empty-state--compact">最近还没有导出记录，完成一次导出后会显示在这里。</div>';
+          return;
+        }
+        recentExportList.innerHTML=entries.map((entry)=>{const folderName=(entry.outputDir || "").split(/[\\\\/]/).pop() || entry.outputDir; const openDocumentButton=entry.primaryDocumentPath ? '<button type="button" class="button" data-history-open-document="' + escapeClientHtml(entry.primaryDocumentPath) + '">打开 transcript</button>' : ''; return '<article class="history-card"><div class="history-copy"><div class="history-title">' + escapeClientHtml(folderName) + '</div><p class="history-meta">' + escapeClientHtml(entry.createdAt || "") + ' · ' + escapeClientHtml(String(entry.exportedCount || 0)) + ' 条会话</p><p class="history-path">' + escapeClientHtml(entry.outputDir || "") + '</p></div><div class="history-actions">' + openDocumentButton + '<button type="button" class="button" data-history-open-folder="' + escapeClientHtml(entry.outputDir || "") + '">打开目录</button></div></article>';}).join("");
+      }
       function updateSelectionText(){const countText="已选 " + state.selectedSessionIds.size + " 条"; selectedCountChip.textContent=countText; selectionSummary.textContent=countText + "会话";}
       function getSessionTime(session,field){const value=field==="first" ? session.firstMessageAt || session.timestamp || session.updatedAt : session.lastMessageAt || session.updatedAt || session.timestamp; const parsed=Date.parse(value || ""); return Number.isNaN(parsed) ? 0 : parsed;}
       function matchesType(card){const filter=sessionTypeFilterSelect.value; return filter==="all" ? true : card.getAttribute("data-session-type")===filter;}
@@ -331,20 +543,46 @@ export function renderExportWizardHtml(input: ExportWizardRenderInput): string {
       function applySessionView(){const query=(sessionSearchInput.value || "").trim().toLowerCase(); const sortField=sortFieldSelect.value; const direction=sortDirectionSelect.value; const ordered=[...state.sessions].sort((left,right)=>{const delta=getSessionTime(left,sortField)-getSessionTime(right,sortField); return direction==="asc" ? delta : -delta;}); const cards=new Map(Array.from(document.querySelectorAll("[data-session-card]")).map((card)=>[card.getAttribute("data-session-id"),card])); const visible=[]; ordered.forEach((session)=>{const card=cards.get(session.sessionId); if(!card)return; const haystack=(card.getAttribute("data-search-text") || "").toLowerCase(); if((!query || haystack.includes(query)) && matchesType(card) && matchesDateRange(card)){visible.push(card);}}); cards.forEach((card)=>card.setAttribute("hidden","")); visible.forEach((card)=>{card.removeAttribute("hidden"); sessionList.appendChild(card);}); emptyState.hidden=visible.length>0; visibleCountChip.textContent="显示 " + visible.length + " / " + state.sessions.length;}
       function applyProfile(profileId){const profile=getProfile(profileId); if(!profile)return; state.selectedProfileId=profile.id; profileSelect.value=profile.id; documentModeSelect.value=profile.documentMode; hiddenContentModeSelect.value=profile.hiddenContentMode; toolTraceLevelSelect.value=profile.toolTraceLevel; includeMessageTimestampsCheckbox.checked=profile.includeMessageTimestamps; includeChildSessionsCheckbox.checked=profile.includeChildSessionsAsAppendix; startTimeInput.value=isoToDatetimeLocal(profile.transcriptTimeFilter && profile.transcriptTimeFilter.start); endTimeInput.value=isoToDatetimeLocal(profile.transcriptTimeFilter && profile.transcriptTimeFilter.end); document.querySelectorAll("[data-section-id]").forEach((checkbox)=>{checkbox.checked=profile.includedSections.includes(checkbox.getAttribute("data-section-id"));});}
       function collectIncludedSections(){return Array.from(document.querySelectorAll("[data-section-id]")).filter((checkbox)=>checkbox.checked).map((checkbox)=>checkbox.getAttribute("data-section-id"));}
-      function buildPayload(includeProfileName,customProfileName){return {selectedProfileId:state.selectedProfileId,selectedSessionIds:Array.from(state.selectedSessionIds),outputDir:outputDirInput.value.trim(),documentMode:documentModeSelect.value,hiddenContentMode:hiddenContentModeSelect.value,toolTraceLevel:toolTraceLevelSelect.value,includeMessageTimestamps:includeMessageTimestampsCheckbox.checked,includeChildSessionsAsAppendix:includeChildSessionsCheckbox.checked,includedSections:collectIncludedSections(),start:datetimeLocalToIso(startTimeInput.value),end:datetimeLocalToIso(endTimeInput.value),customProfileName:includeProfileName ? customProfileName : undefined};}
+      function buildPayload(includeProfileName,customProfileName){return {selectedProfileId:state.selectedProfileId,selectedSessionIds:Array.from(state.selectedSessionIds),outputDir:outputDirInput.value.trim(),codexRoot:codexRootInput ? codexRootInput.value.trim() : undefined,documentMode:documentModeSelect.value,hiddenContentMode:hiddenContentModeSelect.value,toolTraceLevel:toolTraceLevelSelect.value,includeMessageTimestamps:includeMessageTimestampsCheckbox.checked,includeChildSessionsAsAppendix:includeChildSessionsCheckbox.checked,includedSections:collectIncludedSections(),start:datetimeLocalToIso(startTimeInput.value),end:datetimeLocalToIso(endTimeInput.value),customProfileName:includeProfileName ? customProfileName : undefined};}
       profileSelect.addEventListener("change",()=>applyProfile(profileSelect.value));
       document.getElementById("pick-output-dir").addEventListener("click",()=>{vscode.postMessage({type:"pickOutputDir"});});
+      if(pickCodexRootButton){pickCodexRootButton.addEventListener("click",()=>{vscode.postMessage({type:"pickCodexRoot"});});}
+      if(createShortcutButton){createShortcutButton.addEventListener("click",()=>{vscode.postMessage({type:"createDesktopShortcut",payload:{}});});}
       document.getElementById("select-all-sessions").addEventListener("click",()=>{document.querySelectorAll("[data-session-card]").forEach((card)=>{if(card.hasAttribute("hidden"))return; const checkbox=card.querySelector(".session-checkbox"); if(!checkbox)return; checkbox.checked=true; state.selectedSessionIds.add(checkbox.getAttribute("data-session-id"));}); updateSelectionText();});
       document.getElementById("clear-all-sessions").addEventListener("click",()=>{state.selectedSessionIds.clear(); document.querySelectorAll(".session-checkbox").forEach((checkbox)=>{checkbox.checked=false;}); updateSelectionText();});
       sessionList.addEventListener("change",(event)=>{const target=event.target; if(!(target instanceof HTMLInputElement) || !target.classList.contains("session-checkbox"))return; const sessionId=target.getAttribute("data-session-id"); if(!sessionId)return; if(target.checked){state.selectedSessionIds.add(sessionId);}else{state.selectedSessionIds.delete(sessionId);} updateSelectionText();});
-      sessionList.addEventListener("click",(event)=>{const target=event.target; if(!(target instanceof HTMLElement))return; const button=target.closest("[data-child-toggle]"); if(!button)return; const sessionId=button.getAttribute("data-child-toggle"); const panel=document.querySelector('[data-child-panel="' + sessionId + '"]'); if(!panel)return; const hidden=panel.hasAttribute("hidden"); if(hidden){panel.removeAttribute("hidden"); button.textContent="收起子会话";}else{panel.setAttribute("hidden",""); button.textContent="展开查看子会话";}});
+      sessionList.addEventListener("click",(event)=>{const target=event.target; if(!(target instanceof HTMLElement))return; const button=target.closest("[data-child-toggle]"); if(button){const sessionId=button.getAttribute("data-child-toggle"); const panel=document.querySelector('[data-child-panel="' + sessionId + '"]'); if(!panel)return; const hidden=panel.hasAttribute("hidden"); if(hidden){panel.removeAttribute("hidden"); button.textContent="收起子会话";}else{panel.setAttribute("hidden",""); button.textContent="展开查看子会话";} return;} const openFolder=target.closest("[data-history-open-folder]"); if(openFolder){vscode.postMessage({type:"openExportFolder",payload:{outputDir:openFolder.getAttribute("data-history-open-folder")}}); return;} const openDocument=target.closest("[data-history-open-document]"); if(openDocument){vscode.postMessage({type:"openExportDocument",payload:{path:openDocument.getAttribute("data-history-open-document")}});}});
       sessionSearchInput.addEventListener("input",applySessionView); sessionTypeFilterSelect.addEventListener("change",applySessionView); sortFieldSelect.addEventListener("change",applySessionView); sortDirectionSelect.addEventListener("change",applySessionView); filterFieldSelect.addEventListener("change",applySessionView); filterStartInput.addEventListener("change",applySessionView); filterEndInput.addEventListener("change",applySessionView);
       document.getElementById("save-profile-button").addEventListener("click",()=>{vscode.postMessage({type:"saveProfile",payload:buildPayload(true,customProfileNameInput.value.trim())});});
       document.getElementById("update-profile-button").addEventListener("click",()=>{const fallbackName=profileSelect.options[profileSelect.selectedIndex] && profileSelect.options[profileSelect.selectedIndex].textContent ? profileSelect.options[profileSelect.selectedIndex].textContent : ""; vscode.postMessage({type:"updateProfile",payload:buildPayload(true,customProfileNameInput.value.trim() || fallbackName)});});
       document.getElementById("delete-profile-button").addEventListener("click",()=>{vscode.postMessage({type:"deleteProfile",payload:buildPayload(false)});});
-      document.getElementById("export-button").addEventListener("click",()=>{vscode.postMessage({type:"export",payload:buildPayload(false)});});
-      window.addEventListener("message",(event)=>{const message=event.data; if(message.type==="outputDirSelected"){outputDirInput.value=message.payload.outputDir || ""; setStatus("已选择导出目录。");} if(message.type==="profilesUpdated"){state.profiles=message.payload.profiles; profileSelect.innerHTML=state.profiles.map((profile)=>'<option value="' + profile.id + '">' + profile.name + '</option>').join(""); profileSelect.value=message.payload.selectedProfileId; applyProfile(message.payload.selectedProfileId);} if(message.type==="status"){setStatus(message.payload.text || "");}});
-      if(state.start)startTimeInput.value=isoToDatetimeLocal(state.start); if(state.end)endTimeInput.value=isoToDatetimeLocal(state.end); sessionTypeFilterSelect.value="main"; applyProfile(state.selectedProfileId); updateSelectionText(); applySessionView();
+      exportButton.addEventListener("click",()=>{
+        if(state.exporting)return;
+        hideSuccessModal();
+        setExporting(true,"正在校验...");
+        setStatus("正在准备导出，请稍候。","progress");
+        setProgress(4,"正在校验导出参数");
+        vscode.postMessage({type:"export",payload:buildPayload(false)});
+      });
+      successClose.addEventListener("click",hideSuccessModal);
+      successDismissButton.addEventListener("click",hideSuccessModal);
+      successRerunButton.addEventListener("click",()=>{hideSuccessModal(); if(!state.exporting){exportButton.click();}});
+      successModal.addEventListener("click",(event)=>{if(event.target===successModal)hideSuccessModal();});
+      successOpenFolderButton.addEventListener("click",()=>{if(!state.lastExportOutputDir)return; vscode.postMessage({type:"openExportFolder",payload:{outputDir:state.lastExportOutputDir}});});
+      successOpenDocumentButton.addEventListener("click",()=>{if(!state.lastExportPrimaryDocumentPath)return; vscode.postMessage({type:"openExportDocument",payload:{path:state.lastExportPrimaryDocumentPath}});});
+      window.addEventListener("message",(event)=>{
+        const message=event.data;
+        if(message.type==="outputDirSelected"){outputDirInput.value=message.payload.outputDir || ""; setStatus("已选择导出目录。","idle");}
+        if(message.type==="codexRootSelected" && codexRootInput){codexRootInput.value=message.payload.codexRoot || ""; state.codexRoot=message.payload.codexRoot || ""; setStatus("已切换 Codex 数据目录，正在刷新会话列表。","success");}
+        if(message.type==="profilesUpdated"){state.profiles=message.payload.profiles; profileSelect.innerHTML=state.profiles.map((profile)=>'<option value="' + profile.id + '">' + profile.name + '</option>').join(""); profileSelect.value=message.payload.selectedProfileId; applyProfile(message.payload.selectedProfileId);}
+        if(message.type==="recentExportsUpdated"){state.recentExports=Array.isArray(message.payload.recentExports) ? message.payload.recentExports : []; renderRecentExports(state.recentExports);}
+        if(message.type==="status"){setStatus(message.payload.text || "",message.payload.tone || "idle");}
+        if(message.type==="exportStarted"){hideSuccessModal(); setExporting(true,message.payload.label || "正在导出..."); setStatus(message.payload.text || "正在导出，请稍候。","progress"); setProgress(Number(message.payload.percent || 8),message.payload.text || "正在导出，请稍候。");}
+        if(message.type==="exportProgress"){setStatus(message.payload.text || "", "progress"); setProgress(Number(message.payload.percent || 0),message.payload.text || "正在导出");}
+        if(message.type==="exportFinished"){setExporting(false); setStatus(message.payload.text || "导出完成。","success"); setProgress(100,message.payload.text || "导出完成"); showSuccessModal(message.payload || {}); if(Array.isArray(message.payload.recentExports)){state.recentExports=message.payload.recentExports; renderRecentExports(state.recentExports);}}
+        if(message.type==="exportFailed"){setExporting(false); setStatus(message.payload.text || "导出失败。","error"); setProgress(0,message.payload.text || "导出失败");}
+      });
+      if(state.start)startTimeInput.value=isoToDatetimeLocal(state.start); if(state.end)endTimeInput.value=isoToDatetimeLocal(state.end); if(codexRootInput)codexRootInput.value=state.codexRoot; sessionTypeFilterSelect.value="main"; applyProfile(state.selectedProfileId); updateSelectionText(); renderRecentExports(state.recentExports); setExporting(false); applySessionView();
     </script>
   </body>
 </html>`;

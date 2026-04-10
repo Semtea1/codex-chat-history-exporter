@@ -60,6 +60,68 @@ describe("timeline", () => {
     });
   });
 
+  it("replaces event_msg image placeholders with mirrored response_item images", () => {
+    const rows: RawSessionRow[] = [
+      {
+        type: "turn_context",
+        payload: { turn_id: "turn-2" }
+      },
+      {
+        timestamp: "2026-04-10T02:20:57.530Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "input_text", text: "<image name=[Image #1]>" },
+            { type: "input_image", image_url: "data:image/png;base64,abc" },
+            { type: "input_text", text: "</image>" },
+            { type: "input_text", text: "Fix this [Image #1] please" }
+          ]
+        }
+      },
+      {
+        timestamp: "2026-04-10T02:20:57.530Z",
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "Fix this [Image #1] please",
+          images: [],
+          local_images: ["C:\\temp\\clipboard.png"],
+          text_elements: [
+            {
+              placeholder: "[Image #1]"
+            }
+          ]
+        }
+      }
+    ];
+
+    const items = normalizeTimeline(rows);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "transcript",
+      role: "user",
+      source: "event_msg",
+      images: ["data:image/png;base64,abc"]
+    });
+
+    const userItem = items[0] as Extract<(typeof items)[number], { kind: "transcript" }>;
+    expect(userItem.text).not.toContain("[Image #1]");
+    expect(userItem.contentBlocks).toEqual([
+      { type: "text", text: "Fix this " },
+      {
+        type: "image",
+        image: "data:image/png;base64,abc",
+        inline: true,
+        alt: "Image #1",
+        placeholder: "[Image #1]"
+      },
+      { type: "text", text: " please" }
+    ]);
+  });
+
   it("emits tool call and tool output items in order", () => {
     const rows: RawSessionRow[] = [
       {

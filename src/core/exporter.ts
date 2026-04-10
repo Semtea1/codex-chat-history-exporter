@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { AssetExtractor } from "./asset-extractor";
 import { prepareSessionOutputDir, writeDocument } from "./export-writer";
@@ -45,6 +45,16 @@ async function materializeTranscriptAssets(
   const extractor = new AssetExtractor(sessionDir);
   const mapped: TimelineItem[] = [];
 
+  const materializeImage = async (image: string, turn: number, role: "user" | "assistant"): Promise<string> => {
+    if (image.startsWith("data:image/")) {
+      return extractor.writeDataUrl(image, `${assetPrefix}-turn${turn}-${role}-image`);
+    }
+    if (isAbsolute(image)) {
+      return extractor.copyLocalFile(image, `${assetPrefix}-turn${turn}-${role}-image`);
+    }
+    return image;
+  };
+
   for (const item of items) {
     if (item.kind !== "transcript") {
       mapped.push(item);
@@ -53,16 +63,26 @@ async function materializeTranscriptAssets(
 
     const images: string[] = [];
     for (const image of item.images) {
-      if (image.startsWith("data:image/")) {
-        images.push(await extractor.writeDataUrl(image, `${assetPrefix}-turn${item.turn}-${item.role}-image`));
-      } else {
-        images.push(image);
-      }
+      images.push(await materializeImage(image, item.turn, item.role));
     }
+
+    const contentBlocks = item.contentBlocks
+      ? await Promise.all(
+          item.contentBlocks.map(async (block) =>
+            block.type === "text"
+              ? block
+              : {
+                  ...block,
+                  image: await materializeImage(block.image, item.turn, item.role)
+                }
+          )
+        )
+      : undefined;
 
     mapped.push({
       ...item,
-      images
+      images,
+      contentBlocks
     } satisfies TranscriptTimelineItem);
   }
 
